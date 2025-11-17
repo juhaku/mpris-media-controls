@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+  --color-light: var(--color-rose-100);
+  --color-dark: var(--color-slate-950);
+  --color-darkrose: var(--color-rose-950);
+  --color-inidicator: var(--color-rose-600);
+  --shadow-glass-box:
+    0 8px 32px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  --text-shadow-glassbox: 0 4px 4px rgba(0, 0, 0, 0.3);
+  --drop-shadow-glassbox: 0 4px 4px rgba(0, 0, 0, 0.3);
+  --color-black-transparent: rgba(0, 0, 0, 0.8);
+  --color-black-light-transparent: rgba(0, 0, 0, 0.4);
+  --shadow-track: 0px 0px 2px rgba(0, 0, 0, 0.6);
+  --drop-shadow-track-indicator: 0px 0px 2px var(--color-inidicator);
+}
