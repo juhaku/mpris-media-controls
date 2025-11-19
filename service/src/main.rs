@@ -1,36 +1,22 @@
 mod media;
 mod pulseaudio;
 
-use crate::Result::Ok;
-use std::collections::HashMap;
-use std::convert::Infallible;
-use std::path::PathBuf;
+#[cfg(feature = "embed-ui")]
+mod ui;
+
 use std::result::Result;
 use std::sync::Arc;
-use std::task::Poll;
-use std::time::Duration;
 
 use anyhow::{Context, Error};
-use async_stream::stream;
-use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::response::sse::Event;
-use axum::response::{IntoResponse, Sse};
-use axum::{Json, Router, routing};
-use futures::channel::oneshot;
-use futures::{Stream, StreamExt, TryFutureExt, TryStreamExt};
-use pin_project::pin_project;
+use axum::response::IntoResponse;
+use axum::{Router, routing};
 use thiserror::Error;
 use tokio::net::TcpListener;
-use tokio::time::timeout;
-use tokio::{fs, time};
-use tokio_stream::wrappers::ReceiverStream;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
-use tracing::Level;
-use tracing_subscriber::FmtSubscriber;
+use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use zbus::Connection;
-use zbus::zvariant::OwnedObjectPath;
 
 #[derive(Debug, Error)]
 enum ApiError {
@@ -64,10 +50,10 @@ enum ApiError {
     LoadImage(#[from] reqwest::Error),
     #[error("{0}")]
     Volume(anyhow::Error),
-    #[error("{0}")]
-    Next(anyhow::Error),
-    #[error("{0}")]
-    Previous(anyhow::Error),
+    // #[error("{0}")]
+    // Next(anyhow::Error),
+    // #[error("{0}")]
+    // Previous(anyhow::Error),
 }
 
 impl IntoResponse for ApiError {
@@ -111,32 +97,39 @@ impl IntoResponse for ApiError {
             }
             ApiError::Volume(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            }
-            ApiError::Next(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            }
-            ApiError::Previous(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            }
+            } // ApiError::Next(_) => {
+              //     (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
+              // }
+              // ApiError::Previous(_) => {
+              //     (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
         }
+              // }
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    // TODO maybe add env filter??
     tracing::subscriber::set_global_default(
         FmtSubscriber::builder()
-            .with_max_level(Level::DEBUG)
+            .with_env_filter(EnvFilter::from_default_env())
             .finish(),
     )
     .context("Failed to setup tracing subscriber")?;
 
     let connection = Connection::session().await.map_err(anyhow::Error::new)?;
 
-    let router = Router::new().nest("/api", api(Arc::new(connection)));
+    #[allow(unused_mut)]
+    let mut router = Router::new().nest("/api", api(Arc::new(connection)));
+    #[cfg(feature = "embed-ui")]
+    {
+        router = router.fallback(ui::serve_ui);
+    }
+    // .fallback_service(
+    //     ServeDir::new("assets").not_found_service(ServeFile::new("assets/index.html")),
+    // );
     let listener = TcpListener::bind(("0.0.0.0", 4433)).await?;
 
+    tracing::info!("Starting service at 0.0.0.0:4433");
     axum::serve(listener, router.into_make_service())
         .await
         .map_err(Error::new)

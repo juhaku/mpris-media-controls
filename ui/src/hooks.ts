@@ -1,6 +1,7 @@
 import {
   useQueries,
   useQuery,
+  useQueryClient,
   useSuspenseQueries,
   useSuspenseQuery,
 } from "@tanstack/react-query";
@@ -107,8 +108,6 @@ const usePlayers = () => {
   return value;
 };
 
-// let currentPlayerSingleton: Id | null = null;
-
 interface CurrentPlayer {
   player: { id: Id; player: Player } | null;
   update: (id: Id) => void;
@@ -123,15 +122,9 @@ const useCurrentPlayer = (): CurrentPlayer => {
   }
   const { players, getPlayer, current: currentPlayer, setCurrent } = cache;
 
-  // const [currentPlayer, setCurrentPlayer] = useState<Id | null>(
-  //   currentPlayerSingleton,
-  // );
-
   const updateCurrentPlayer = useCallback(
     (player: Id) => {
-      // currentPlayerSingleton = player;
       sessionStorage.setItem("mediaControls_lastPlayer", player);
-      // setCurrentPlayer(player);
       setCurrent({ id: player });
     },
     [setCurrent],
@@ -184,30 +177,19 @@ const useCurrentPlayer = (): CurrentPlayer => {
   );
 
   return value;
-  // return {
-  //   player: player,
-  //   // update: (id: Id) => {
-  //   //   setCurrentPlayerId(id);
-  //   //   sessionStorage.setItem("mediaControls_lastPlayer", id);
-  //   // },
-  // };
 };
 
-const usePlayerImage = (player: Player | null): string | null => {
+const usePlayerImage = (image_url: string | undefined): string | null => {
   const [image, setImage] = useState<string | null>(null);
 
   const { data: binary } = useQuery<Uint8Array>({
-    queryKey: [
-      "/media",
-      "/image",
-      `/${encodeURIComponent(player?.meta.art_url ?? "")}`,
-    ],
-    enabled: player !== null && player.meta.art_url !== "",
+    queryKey: ["/media", "/image", `/${encodeURIComponent(image_url ?? "")}`],
+    enabled: image_url !== undefined && image_url !== "",
   });
 
   useMemo(() => {
     let url: string | null = null;
-    if (binary) {
+    if (binary && image_url) {
       const blob = new Blob([binary as BlobPart], {
         type: "application/octet-stream",
       });
@@ -215,209 +197,10 @@ const usePlayerImage = (player: Player | null): string | null => {
     }
 
     setImage(url);
-  }, [binary]);
+  }, [binary, image_url]);
 
   return image;
 };
-
-// interface PlayerPostion {
-//   cancel: () => void;
-//   subscribe: () => void;
-// }
-
-// const usePlayerPosition = (
-//   player: Id,
-//   onPosition: (positon: number) => void,
-// ): PlayerPostion => {
-//   const [source, setSource] = useState<EventSource | null>(null);
-//
-//   const { players } = usePlayers();
-//   const isPlaying = players[player].isPlaying();
-//
-//   const subscribe = useCallback(() => {
-//     const source = new EventSource(
-//       `http://tower:4433/api/media/position-sse/${player}`,
-//       // {
-//       //   withCredentials: true,
-//       // },
-//     );
-//
-//     source.addEventListener("error", (event) => {
-//       console.log("error", event);
-//       source.close();
-//     });
-//     source.addEventListener("position", (event) => {
-//       // console.log(event);
-//       if (event.data === "EOS") {
-//         source.close(); // last position reached
-//       } else {
-//         onPosition(event.data as number);
-//       }
-//     });
-//
-//     return source;
-//   }, [onPosition, player]);
-//
-//   const { data: position, error } = useQuery<number>({
-//     queryKey: ["/media", "/position", `/${encodeURIComponent(player)}`],
-//     enabled: !isPlaying,
-//   });
-//
-//   useMemo(() => {
-//     if (!isPlaying && error) {
-//       console.error("failed to fetch positon for player", player, error);
-//       return;
-//       // return { cancel: () => ({}) };
-//     }
-//     if (!isPlaying) {
-//       onPosition(Number(position));
-//       return;
-//     }
-//     // return { cancel: () => ({}) };
-//   }, [error, isPlaying, onPosition, player, position]);
-//
-//   useMemo(() => {
-//     if (isPlaying && source === null) {
-//       const s = subscribe();
-//       setSource(s);
-//     }
-//   }, [isPlaying, source, subscribe]);
-//
-//   // const source = new EventSource(
-//   //   `http://tower:4433/api/media/position-sse/${player}`,
-//   //   // {
-//   //   //   withCredentials: true,
-//   //   // },
-//   // );
-//   // source.addEventListener("error", (event) => {
-//   //   console.log("error", event);
-//   //   source.close();
-//   // });
-//   // source.addEventListener("position", (event) => {
-//   //   console.log(event);
-//   //   if (event.data === "EOS") {
-//   //     source.close(); // last position reached
-//   //   } else {
-//   //     onPosition(event.data as number);
-//   //   }
-//   // });
-//
-//   return {
-//     cancel: () => {
-//       console.log("cancelling source", source);
-//       if (source !== null) {
-//         source.close();
-//       }
-//     },
-//     subscribe: () => {
-//       const s = subscribe();
-//       console.log("subscribing source", s, "old", source);
-//       setSource(s);
-//
-//       return s;
-//     },
-//   };
-// };
-
-// interface Source {
-//   source: EventSource | null;
-//   listeners: Set<(position: number) => void>;
-//   subscribe: (player: Id, onData: (position: number) => void) => () => void;
-// }
-
-// const source: Source = {
-//   source: null,
-//   listeners: new Set(),
-//   subscribe: (player: Id, onData: (position: number) => void) => {
-//     source.listeners.add(onData);
-//     if (!source.source) {
-//       source.source = new EventSource(
-//         `http://tower:4433/api/media/position-sse/${player}`,
-//       );
-//
-//       source.source.addEventListener("error", (event) => {
-//         console.log("error", event);
-//         source.source?.close();
-//       });
-//       source.source.addEventListener("position", (event) => {
-//         // console.log(event);
-//         if (event.data === "EOS") {
-//           source.source?.close(); // last position reached
-//         } else {
-//           console.log("got pos", event.data);
-//           source.listeners.forEach((callback) => {
-//             callback(event.data as number);
-//           });
-//         }
-//       });
-//     }
-//
-//     return () => {
-//       source.listeners.delete(onData);
-//     };
-//   },
-// };
-
-// const useCurrentPlayerPosition = (onPosition: (positon: number) => void) => {
-//   const { player } = useCurrentPlayer();
-//
-//   const { data } = useQuery<number>({
-//     queryKey: [
-//       "/media",
-//       "/position",
-//       `/${encodeURIComponent(player?.id ?? "")}`,
-//     ],
-//     enabled: player !== null && !player.player.isPlaying(),
-//   });
-//
-//   const subscribe = useCallback(
-//     (player: Id) => {
-//       const source = new EventSource(
-//         `http://tower:4433/api/media/position-sse/${player}`,
-//       );
-//
-//       source.addEventListener("error", (event) => {
-//         console.log("error", event);
-//         source.close();
-//       });
-//       source.addEventListener("position", (event) => {
-//         if (event.data === "EOS") {
-//           source.close(); // last position reached
-//         } else {
-//           onPosition(event.data as number);
-//         }
-//       });
-//
-//       return source;
-//     },
-//     [onPosition],
-//   );
-//
-//   const source = useRef<EventSource | null>(null);
-//   useEffect(() => {
-//     if (!player?.player.isPlaying() && data) {
-//       onPosition(data);
-//     } else if (player?.id) {
-//       console.log("should subscribe to player");
-//       source.current = subscribe(player.id);
-//       return () => {
-//         source.current?.close();
-//       };
-//       // return source.subscribe(player.id, setPosition);
-//     }
-//   }, [data, onPosition, player, subscribe]);
-//
-//   const cancel = useCallback(() => {
-//     console.log("close player positoin source, onCancel");
-//     source.current?.close();
-//     // source?.close();
-//     // source = null;
-//   }, []);
-//
-//   const value = useMemo(() => ({ cancel }), [cancel]);
-//
-//   return value;
-// };
 
 const useSse = () => useContext(SseContext);
 
@@ -478,15 +261,89 @@ const useCurrentPlayerPos = () => {
   return position;
 };
 
+const usePlayerSse = () => {
+  const cache = usePlayersCache();
+  if (cache === null) {
+    throw new Error(
+      "Cannot use Players, PlayerContext not set, did you define the <PlayerContextProvider> component",
+    );
+  }
+  const { updateMetadata } = cache;
+  const client = useQueryClient();
+  const sse = useSse();
+  if (sse === null) {
+    // console.error("Did you forget to define <SseContextProvider> in dom tree");
+    throw new Error(
+      "Did you forget to define <SseContextProvider> in dom tree",
+    );
+  }
+  const { connect, close } = sse;
+
+  const { player } = useCurrentPlayer();
+  const url = `${config.server}/media/player-sse/${player?.id ?? ""}`;
+
+  const listener = useCallback(
+    async (type: "metadata" | "status", data: unknown) => {
+      switch (type) {
+        case "metadata": {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          const metadata: Metadata = JSON.parse(data as string);
+
+          if (player?.id) {
+            const queryKey = ["/media", "/metadata", `/${player.id}`];
+            updateMetadata({ id: player.id, metadata });
+            client.setQueryData(queryKey, (old: unknown) => {
+              return { ...(old as object), ...metadata };
+            });
+
+            await client.invalidateQueries({ queryKey });
+            await client.invalidateQueries({
+              queryKey: ["/media", "/status", `/${player.id}`],
+            });
+          }
+          break;
+        }
+        case "status": {
+          if (player?.id) {
+            await client.invalidateQueries({
+              queryKey: ["/media", "/status", `/${player.id}`],
+            });
+          }
+          break;
+        }
+      }
+    },
+    [client, player?.id, updateMetadata],
+  );
+
+  useEffect(() => {
+    if (player?.id) {
+      // console.log("use player sse 2", url);
+      connect({
+        event: ["metadata", "status"] as const,
+        keepalive: true,
+        url,
+        listener,
+      });
+    }
+
+    return () => {
+      if (player?.id) {
+        // console.log("unmout player sse 2", url);
+        close(url, listener);
+      }
+    };
+  }, [close, connect, listener, player?.id, url]);
+};
+
 export {
   usePlayersCache,
   usePlayers,
   usePlayerImage,
   useCurrentPlayer,
   useCurrentPlayerPos,
-  // usePlayerPosition,
-  // useCurrentPlayerPosition,
   useSse,
+  usePlayerSse,
   PlayersContext,
   type Player,
   type Id,

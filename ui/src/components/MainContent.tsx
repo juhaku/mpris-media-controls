@@ -7,6 +7,7 @@ import {
   useCurrentPlayerPos,
   usePlayerImage,
   usePlayers,
+  usePlayerSse,
   type Player,
 } from "../hooks";
 import {
@@ -25,7 +26,6 @@ import {
 import Volume from "./Volume";
 import { Check, Settings } from "lucide-react";
 import { Sheet } from "./Sheet";
-import { usePlayerSse } from "../playerSse";
 
 export default function MainContent() {
   const settings = useSettings();
@@ -108,6 +108,7 @@ export default function MainContent() {
                     <ListBoxItem
                       key={id}
                       className="m-1 rounded-md border border-white/30 px-3 py-3"
+                      textValue={p.name}
                       onPress={(_) => {
                         console.log("select player", p, id);
                         update(id);
@@ -157,7 +158,7 @@ function Main({
   );
 
   const WithBg = ({ player }: { player: Player }) => {
-    const imageUrl = usePlayerImage(player);
+    const imageUrl = usePlayerImage(player.meta.art_url);
     return renderMain(
       imageUrl !== null
         ? {

@@ -15,7 +15,7 @@ use tokio::fs;
 use tokio::sync::oneshot;
 use tokio::time::{self, timeout};
 use tokio_stream::StreamExt;
-use tokio_stream::wrappers::{IntervalStream, ReceiverStream};
+use tokio_stream::wrappers::ReceiverStream;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use zbus::Connection;
 use zvariant::OwnedObjectPath;

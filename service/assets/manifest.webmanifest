@@ -1,0 +1,1 @@
+{"name":"Media Controls","short_name":"Media Controls","start_url":"http://tower:5465/","display":"standalone","background_color":"#ffffff","theme_color":"#42b883","lang":"en","scope":"/","id":"http://tower:5465/","icons":[{"src":"./public/mpris.svg","sizes":"any"}]}

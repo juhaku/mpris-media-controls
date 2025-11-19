@@ -5,9 +5,8 @@ import {
   useRef,
   type PropsWithChildren,
 } from "react";
-import type { Id } from "./hooks";
 
-type Sources = Record<Id, EventSource | null>;
+type Sources = Record<string, EventSource | null>;
 
 type SourceType = "PlayerStatus" | "PlayerPosition";
 
@@ -39,7 +38,6 @@ type Listener<E extends EventType> = E extends readonly string[]
   : E extends string
     ? (type: E, data: unknown) => void | Promise<void>
     : never;
-// type Listener = (type: string, data: unknown) => void | Promise<void>;
 
 function SseContextProvider({ children }: PropsWithChildren) {
   const sources = useRef<Sources>({});
