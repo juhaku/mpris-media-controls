@@ -15,6 +15,7 @@ use thiserror::Error;
 use tokio::net::TcpListener;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
+use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use zbus::Connection;
 
@@ -103,18 +104,24 @@ impl IntoResponse for ApiError {
               // ApiError::Previous(_) => {
               //     (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
         }
-              // }
+        // }
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    tracing::subscriber::set_global_default(
-        FmtSubscriber::builder()
-            .with_env_filter(EnvFilter::from_default_env())
-            .finish(),
-    )
-    .context("Failed to setup tracing subscriber")?;
+    if std::env::var("JOURNAL_LOGGING").is_ok() {
+        let layer = tracing_journald::layer()
+            .context("Failed to create new journald tracing layer, not in linux")?;
+        tracing_subscriber::registry().with(layer);
+    } else {
+        tracing::subscriber::set_global_default(
+            FmtSubscriber::builder()
+                .with_env_filter(EnvFilter::from_default_env())
+                .finish(),
+        )
+        .context("Failed to setup tracing subscriber")?;
+    }
 
     let connection = Connection::session().await.map_err(anyhow::Error::new)?;
 

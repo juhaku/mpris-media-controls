@@ -22,6 +22,7 @@ PrivateDevices=yes
 PrivateUsers=yes
 
 # Environment
+Environment=JOURNAL_LOGGING=true
 Environment=DISPLAY=:0
 Environment=XDG_RUNTIME_DIR=/run/user/%U
 
