@@ -18,11 +18,12 @@ ProtectHome=read-only
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes
-PrivateTmp=yes
+#PrivateTmp=yes
 PrivateDevices=yes
 PrivateUsers=yes
 
 # Environment
+Environment=RUST_LOG=info
 Environment=JOURNAL_LOGGING=true
 Environment=DISPLAY=:0
 Environment=XDG_RUNTIME_DIR=/run/user/%U

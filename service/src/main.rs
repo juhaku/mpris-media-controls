@@ -119,19 +119,18 @@ impl IntoResponse for ApiError {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    tracing::subscriber::set_global_default(
+        FmtSubscriber::builder()
+            .with_env_filter(EnvFilter::from_default_env())
+            .finish(),
+    )
+    .context("Failed to setup tracing subscriber")?;
+
     if std::env::var("JOURNAL_LOGGING").is_ok() {
         let layer = tracing_journald::layer()
             .context("Failed to create new journald tracing layer, not in linux")?;
         tracing_subscriber::registry().with(layer);
-    } else {
-        tracing::subscriber::set_global_default(
-            FmtSubscriber::builder()
-                .with_env_filter(EnvFilter::from_default_env())
-                .finish(),
-        )
-        .context("Failed to setup tracing subscriber")?;
     }
-
     let connection = Connection::session().await.map_err(anyhow::Error::new)?;
 
     #[allow(unused_mut)]
