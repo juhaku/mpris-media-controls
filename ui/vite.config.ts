@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import tailwindcss from "@tailwindcss/vite";
 
-const isProd = process.env.IS_PROD === "true";
+const isProd = process.env.NODE_ENV === "production";
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -23,10 +23,10 @@ export default defineConfig({
         enabled: true,
       },
       manifest: {
-        name: "Media Controls",
-        short_name: "Media Controls",
-        id: isProd ? "https://tower:4433/" : "http://tower:5465/",
-        start_url: isProd ? "https://tower:4433/" : "http://tower:5465/",
+        name: isProd ? "Media Controls" : "Media Controls dev",
+        short_name: isProd ? "Media Controls" : "Media Controls dev",
+        id: isProd ? "http://tower:4433/" : "http://tower:5173/",
+        start_url: isProd ? "http://tower:4433/" : "http://tower:5173/",
         display: "standalone",
         icons: [
           {

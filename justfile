@@ -18,17 +18,18 @@ start-service:
 dev: start-service start-ui 
 
 # Build the bundled app from service and UI.
-build:
+build mode='development':
   @pushd ui; \
-    IS_PROD=true pnpm build; \
+    NODE_ENV='{{mode}}' pnpm build --mode {{mode}}; \
     if [ -d ../service/assets/ ]; then rm -r ../service/assets; fi; \
-    cp -r dist ../service/assets;
+    cp -r dist ../service/assets; \
+    cp -r public ../service/assets/;
   @pushd service; \
     cargo build --features embed-ui --release
 
 # Build and run the release binary app
-preview: build
-  @pushd service; RUST_LOG='info' ./target/release/service
+preview: (build "preview")
+  @pushd service; RUST_LOG='info' CERTS_DIR=../certs ./target/release/service
 
 # Install the service locally
 install:
@@ -43,7 +44,10 @@ install:
   chmod +x ~/.local/bin/media-controls
 
   # Create data directory
-  # mkdir -p ~/.local/share/media-controls
+  echo "Insall app data directory"
+  mkdir -p ~/.local/share/media-controls
+  # if [ ! -d ~/.local/share/media-controls/certs ]; then mkdir -p ~/.local/share/media-controls/certs; fi
+  # cp certs/certificates.pem certs/server-private-key.pem -t ~/.local/share/media-controls/certs
 
   echo "Insall app service file to {{BLUE}}~/.config/systemd/user/{{NORMAL}}"
   mkdir -p ~/.config/systemd/user
@@ -69,5 +73,8 @@ uninstall:
 
   echo "Remove app binary from {{BLUE}}~/.config/bin/media-controls{{NORMAL}}"
   rm ~/.local/bin/media-controls
+
+  echo "Remove app data directory"
+  rm -r ~/.local/share/media-controls
 
   echo "{{GREEN}}Done{{NORMAL}}"

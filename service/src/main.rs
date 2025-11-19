@@ -4,6 +4,8 @@ mod pulseaudio;
 #[cfg(feature = "embed-ui")]
 mod ui;
 
+use std::fmt::Debug;
+use std::path::{Path, PathBuf};
 use std::result::Result;
 use std::sync::Arc;
 
@@ -11,8 +13,15 @@ use anyhow::{Context, Error};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::{Router, routing};
+use hyper::server::conn::http1;
+use hyper_util::rt::TokioIo;
+use hyper_util::service::TowerToHyperService;
 use thiserror::Error;
 use tokio::net::TcpListener;
+use tokio_rustls::TlsAcceptor;
+use tokio_rustls::rustls::ServerConfig;
+use tokio_rustls::rustls::pki_types::pem::PemObject;
+use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::layer::SubscriberExt;
@@ -134,12 +143,102 @@ async fn main() -> Result<(), anyhow::Error> {
     // .fallback_service(
     //     ServeDir::new("assets").not_found_service(ServeFile::new("assets/index.html")),
     // );
-    let listener = TcpListener::bind(("0.0.0.0", 4433)).await?;
+    let port: u16 = match std::env::var("PORT") {
+        Ok(port) => port
+            .parse::<u16>()
+            .context("Failed to parse PORT env variable to an number")?,
+        Err(_) => 4433,
+    };
 
-    tracing::info!("Starting service at 0.0.0.0:4433");
-    axum::serve(listener, router.into_make_service())
-        .await
-        .map_err(Error::new)
+    let bind = ("0.0.0.0", port);
+    let listener = TcpListener::bind(bind).await?;
+
+    if std::env::var("TLS").is_err() {
+        tracing::info!("Starting service at {bind:?}");
+        axum::serve(listener, router.into_make_service())
+            .await
+            .map_err(Error::new)
+    } else {
+        serve_tls(bind, listener, router).await
+    }
+}
+
+async fn serve_tls(
+    bind: (&'static str, u16),
+    listner: TcpListener,
+    router: Router,
+) -> Result<(), anyhow::Error> {
+    let certs_dir = std::env::var("CERTS_DIR").context("Mising required CERTS_DIR env variable")?;
+
+    let rustls_config = rustls_server_config(
+        [&certs_dir, "server-private-key.pem"]
+            .iter()
+            .collect::<PathBuf>(),
+        [&certs_dir, "certificates.pem"].iter().collect::<PathBuf>(),
+    )?;
+
+    let tls_acceptor = TlsAcceptor::from(rustls_config);
+    tracing::info!("HTTPS server at {bind:?}");
+
+    let hyper_service = Arc::new(TowerToHyperService::new(router));
+
+    loop {
+        let tls_acceptor = tls_acceptor.clone();
+        let service = hyper_service.clone();
+
+        let (cnx, addr) = listner
+            .accept()
+            .await
+            .map_err(|error| anyhow::anyhow!("faile to accept socket connection: {error}"))?;
+
+        tokio::spawn(async move {
+            let stream = match tls_acceptor
+                .accept(cnx)
+                .await
+                .map_err(|error| anyhow::anyhow!("error during TLS handshake: {error}"))
+            {
+                Ok(stream) => stream,
+                Err(error) => {
+                    tracing::warn!("Error in TLS: {error}");
+                    return;
+                }
+            };
+
+            let stream = TokioIo::new(stream);
+
+            if let Err(error) = http1::Builder::new()
+                .serve_connection(stream, service)
+                .await
+            {
+                tracing::warn!("error serving connection {bind:?} to address: {addr}: {error}");
+            }
+        });
+    }
+}
+
+fn rustls_server_config(
+    key: impl AsRef<Path> + Debug + Clone,
+    cert: impl AsRef<Path> + Debug + Clone,
+) -> Result<Arc<ServerConfig>, anyhow::Error> {
+    let key = PrivateKeyDer::from_pem_file(key.clone())
+        .map_err(|error| anyhow::anyhow!("failed to load key from path {key:?} {error}"))?;
+
+    let certs = CertificateDer::pem_file_iter(cert.clone())
+        .map_err(|error| {
+            anyhow::anyhow!("Failed to load certificate: from path: {cert:?} {error}")
+        })?
+        .map(|cert| cert.unwrap())
+        .collect();
+
+    let config = ServerConfig::builder()
+        .with_no_client_auth()
+        // .with_cert_resolver(cert_resolver)
+        .with_single_cert(certs, key)
+        .map_err(|error| {
+            anyhow::anyhow!("Failed to create server config from single cert / key pair: {error:?}")
+        })?;
+
+    Ok(Arc::new(config))
 }
 
 fn api(connection: Arc<Connection>) -> Router {

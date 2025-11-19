@@ -19,3 +19,24 @@ Run dev with following command:
 ```bash
 just dev
 ```
+
+Run preview version of the app
+
+> [!NOTE]
+> Preview mode needs `.env.preview` file with correct `VITE_SERVER_ADDRESS` pointing to correct server.
+
+```bash
+just preview
+```
+
+## Build and install release app
+
+> [!NOTE]
+> Production mode needs `.env.production` file with correct `VITE_SERVER_ADDRESS` pointing to correct server.
+
+Build production app and install it as user systemd service.
+
+```bash
+just build produciton
+just install
+```

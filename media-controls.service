@@ -7,6 +7,7 @@ After=graphical-session.target
 [Service]
 Type=simple
 ExecStart=/home/%u/.local/bin/media-controls
+WorkingDirectory=/home/%u/.local/share/media-controls
 Restart=on-failure
 RestartSec=5s
 
@@ -25,6 +26,8 @@ PrivateUsers=yes
 Environment=JOURNAL_LOGGING=true
 Environment=DISPLAY=:0
 Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=CERTS_DIR=certs
+Environment=PORT=5646
 
 [Install]
 WantedBy=default.target
