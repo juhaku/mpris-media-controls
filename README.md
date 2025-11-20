@@ -46,12 +46,12 @@ just install
 <div style="display: flex;">
     <div style="padding-right: 1rem;">
 
-        ![Play video](./ui/screenshots/1.png)
+        ![Play video](./ui/screenshots/1b.png)
 
     </div>
     <div>
 
-        ![Seek video](./ui/screenshots/2.png)
+        ![Seek video](./ui/screenshots/2b.png)
 
     </div>
 

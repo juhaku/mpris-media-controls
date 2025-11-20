@@ -36,18 +36,18 @@ export default defineConfig({
         ],
         screenshots: [
           {
-            src: "./screenshots/1.png",
+            src: "./screenshots/1b.png",
             form_factor: "narrow",
             type: "image/png",
-            sizes: "1179x2556",
+            sizes: "400x867",
             label: "Playing video",
             platform: "ios",
           },
           {
-            src: "./screenshots/2.png",
+            src: "./screenshots/2b.png",
             form_factor: "narrow",
             type: "image/png",
-            sizes: "1179x2556",
+            sizes: "400x867",
             label: "Seek video",
             platform: "ios",
           },
