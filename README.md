@@ -40,3 +40,23 @@ Build production app and install it as user systemd service.
 just build produciton
 just install
 ```
+
+# Screenshots
+
+<div style="display: flex;">
+    <div style="padding-right: 1rem;">
+
+        ![Play video](./ui/screenshots/1.png)
+
+    </div>
+    <div>
+
+        ![Seek video](./ui/screenshots/2.png)
+
+    </div>
+
+</div>
+
+# Tour vidoe
+
+<video src="./ui/screenshots/tour_short.mp4" controls></video>
