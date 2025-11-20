@@ -8,6 +8,7 @@ use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::result::Result;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Error};
 use axum::http::StatusCode;
@@ -27,6 +28,7 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use zbus::Connection;
+use zbus::conn::Builder;
 
 #[derive(Debug, Error)]
 enum ApiError {
@@ -34,6 +36,8 @@ enum ApiError {
     ListConnections(anyhow::Error),
     #[error("failed to get identity: {0}")]
     GetIdentity(zbus::Error),
+    #[error("{0}")]
+    Players(anyhow::Error),
     #[error("{0}")]
     Metadata(anyhow::Error),
     #[error("{0}")]
@@ -73,6 +77,9 @@ impl IntoResponse for ApiError {
                 (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
             }
             ApiError::GetIdentity(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
+            }
+            ApiError::Players(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
             }
             ApiError::Metadata(_) => {
@@ -131,7 +138,12 @@ async fn main() -> Result<(), anyhow::Error> {
             .context("Failed to create new journald tracing layer, not in linux")?;
         tracing_subscriber::registry().with(layer);
     }
-    let connection = Connection::session().await.map_err(anyhow::Error::new)?;
+    let connection = Builder::session()
+        .map_err(anyhow::Error::new)?
+        .method_timeout(Duration::from_secs(5))
+        .build()
+        .await
+        .map_err(anyhow::Error::new)?;
 
     #[allow(unused_mut)]
     let mut router = Router::new().nest("/api", api(Arc::new(connection)));

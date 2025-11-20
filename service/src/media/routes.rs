@@ -6,15 +6,16 @@ use std::time::Duration;
 
 use anyhow::Context;
 use async_stream::stream;
+use axum::body::Body;
 use axum::extract::{Path, Query, State};
-use axum::response::Sse;
 use axum::response::sse::Event;
+use axum::response::{IntoResponse, Response, Sse};
 use axum::{Json, Router, routing};
-use futures::{Stream, TryFutureExt, TryStreamExt};
+use futures::{Stream, StreamExt, TryFutureExt, future};
+use hyper::StatusCode;
 use tokio::fs;
 use tokio::sync::oneshot;
 use tokio::time::{self, timeout};
-use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use zbus::Connection;
@@ -29,6 +30,7 @@ use super::player::Metadata;
 pub fn media_api(connection: Arc<Connection>) -> Router {
     Router::new()
         .route("/players", routing::get(get_players))
+        .route("/players-stream", routing::get(get_players_stream))
         .route("/metadata/{player}", routing::get(get_metadata))
         .route("/play_pause/{player}", routing::post(play_pause))
         .route("/seek/{player}", routing::post(seek))
@@ -63,15 +65,70 @@ async fn get_players(
     let player_identities = identities
         .then(|(result, player)| async {
             match result {
-                Ok(identity) => Ok((identity, player)),
-                Err(error) => Err(error),
+                Ok(identity) => Some((identity, player)),
+                Err(error) => {
+                    tracing::warn!(
+                        "Error fetching identity for player: {player}, skipping player, {error}"
+                    );
+                    None
+                }
             }
         })
-        .try_collect::<Vec<(String, String)>>()
-        .await
-        .map_err(ApiError::GetIdentity)?;
+        .filter(|player_identity| future::ready(player_identity.is_some()))
+        .flat_map(|v| {
+            futures::stream::once(async { v.expect("player identity is never None here") })
+        })
+        .collect::<Vec<(String, String)>>()
+        .await;
 
     Ok(Json(player_identities))
+}
+
+async fn get_players_stream(
+    State(connection): State<Arc<Connection>>,
+) -> Result<Response, ApiError> {
+    let players = super::get_players(&connection)
+        .await
+        .map_err(ApiError::ListConnections)?
+        .collect::<Vec<String>>();
+
+    let identities = stream! {
+        for p in players {
+            yield (super::get_identity(&connection, &p).await, p)
+        }
+    };
+
+    let player_identities = identities
+        .then(|(result, player)| async {
+            match result {
+                Ok(identity) => Some((identity, player)),
+                Err(error) => {
+                    tracing::warn!(
+                        "Error fetching identity for player: {player}, skipping player, {error}"
+                    );
+                    None
+                }
+            }
+        })
+        .filter(|player_identity| future::ready(player_identity.is_some()))
+        .map(|v| {
+            let mut json = serde_json::to_string(&v.expect("player identity is never None here"))
+                .expect("Should be JSON serializable anyways");
+            json.push('\n');
+            json
+        })
+        .boxed()
+        .map(Ok::<String, Infallible>);
+
+    let response = Response::builder()
+        .header("content-type", "application/json+stream")
+        .status(StatusCode::OK)
+        .body(Body::from_stream(player_identities))
+        .map_err(|error| {
+            ApiError::Players(anyhow::anyhow!("Error creating players body: {error}"))
+        })?;
+
+    Ok(response)
 }
 
 async fn get_metadata(

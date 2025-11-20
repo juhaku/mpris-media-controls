@@ -25,8 +25,6 @@ export default defineConfig({
       manifest: {
         name: isProd ? "Media Controls" : "Media Controls dev",
         short_name: isProd ? "Media Controls" : "Media Controls dev",
-        id: isProd ? "http://tower:4433/" : "http://tower:5173/",
-        start_url: isProd ? "http://tower:4433/" : "http://tower:5173/",
         display: "standalone",
         icons: [
           {

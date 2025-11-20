@@ -86,13 +86,20 @@ async function handleRequest<R>(
   const isJson = "application/json" === contentType;
   const isBinary = "application/octet-stream" == contentType;
 
-  const getBody = async () =>
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    isJson
-      ? await response.json()
-      : isBinary
-        ? await response.bytes()
-        : await response.text();
+  const getBody: () => Promise<R> = async (): Promise<R> => {
+    switch (true) {
+      case isJson: {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        return await response.json();
+      }
+      case isBinary: {
+        return (await response.bytes()) as R;
+      }
+      default: {
+        return (await response.text()) as R;
+      }
+    }
+  };
 
   if (!response.ok) {
     throw new ResponseError(
@@ -102,7 +109,7 @@ async function handleRequest<R>(
     );
   }
 
-  return getBody() as Promise<R>;
+  return await getBody();
 }
 
 const queryClient = new QueryClient({

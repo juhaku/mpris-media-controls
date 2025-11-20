@@ -20,7 +20,7 @@ dev: start-service start-ui
 # Build the bundled app from service and UI.
 build mode='development':
   @pushd ui; \
-    NODE_ENV='{{mode}}' pnpm build --mode {{mode}}; \
+    NODE_ENV={{mode}} pnpm build --mode {{mode}}; \
     if [ -d ../service/assets/ ]; then rm -r ../service/assets; fi; \
     cp -r dist ../service/assets; \
     cp -r public ../service/assets/;
