@@ -43,20 +43,11 @@ just install
 
 # Screenshots
 
-<div style="display: flex;">
-    <div style="padding-right: 1rem;">
+![Play video](./ui/screenshots/1b.png) ![Play video](./ui/screenshots/2b.png)
 
-        ![Play video](./ui/screenshots/1b.png)
+ 
 
-    </div>
-    <div>
+# Tour video
 
-        ![Seek video](./ui/screenshots/2b.png)
+https://github.com/user-attachments/assets/7ae00f31-2e1e-48b5-b288-7cd9a2be54e2
 
-    </div>
-
-</div>
-
-# Tour vidoe
-
-<video src="./ui/screenshots/tour_short.mp4" controls></video>
