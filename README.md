@@ -40,3 +40,11 @@ Build production app and install it as user systemd service.
 just build produciton
 just install
 ```
+
+# Screenshots
+
+![Play video](./ui/screenshots/1b.png) ![Seek video](./ui/screenshots/2b.png)
+
+# Tour video
+
+https://github.com/user-attachments/assets/7ae00f31-2e1e-48b5-b288-7cd9a2be54e2
