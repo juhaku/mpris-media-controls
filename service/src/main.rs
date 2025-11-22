@@ -23,7 +23,6 @@ use tokio_rustls::TlsAcceptor;
 use tokio_rustls::rustls::ServerConfig;
 use tokio_rustls::rustls::pki_types::pem::PemObject;
 use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
@@ -217,13 +216,20 @@ fn rustls_server_config(
 }
 
 fn api(connection: Arc<Connection>) -> Router {
-    Router::new()
+    #[allow(unused_mut)]
+    let mut router = Router::new()
         .route("/status", routing::get(|| async { "OK" }))
         .nest("/media", media::routes::media_api(connection))
         .route(
             "/volume",
             routing::get(pulseaudio::get_volume).post(pulseaudio::set_volume),
         )
-        .layer(CorsLayer::new().allow_origin(AllowOrigin::any()))
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http());
+    #[cfg(not(feature = "embed-ui"))] // allow cors only when UI is not embedded
+    {
+        use tower_http::cors::{AllowOrigin, CorsLayer};
+        router = router.layer(CorsLayer::new().allow_origin(AllowOrigin::any()));
+    }
+
+    router
 }
