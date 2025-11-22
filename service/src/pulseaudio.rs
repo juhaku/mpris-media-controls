@@ -72,11 +72,12 @@ impl PulseAudio for PaCtl {
                             .split(' ')
                             .nth(5)
                             .map(|volume| {
-                                (volume[0..volume.len() - 1]).parse::<u32>().map_err(
+                                let vol = &volume[0..volume.len() - 1];
+                                (vol).parse::<u32>().map_err(
                                     |error| {
                                         anyhow!(format!(
                                             "Failed to get u32 from first volume: {volume} {error}",
-                                            volume = &volume[0..volume.len() - 1]
+                                            volume = vol
                                         ))
                                     },
                                 )

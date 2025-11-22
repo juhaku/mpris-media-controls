@@ -5,7 +5,6 @@ import {
   useSuspenseQueries,
   useSuspenseQuery,
 } from "@tanstack/react-query";
-import type { NameId } from "./media";
 import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { PlayersContext } from "./playersContext";
 import { config } from "./config";
@@ -24,6 +23,8 @@ interface Player {
   status: Status | null;
   isPlaying: () => boolean;
 }
+
+type NameId = string[];
 
 interface Metadata {
   track_id: string;
@@ -272,7 +273,6 @@ const usePlayerSse = () => {
   const client = useQueryClient();
   const sse = useSse();
   if (sse === null) {
-    // console.error("Did you forget to define <SseContextProvider> in dom tree");
     throw new Error(
       "Did you forget to define <SseContextProvider> in dom tree",
     );
@@ -318,7 +318,6 @@ const usePlayerSse = () => {
 
   useEffect(() => {
     if (player?.id) {
-      // console.log("use player sse 2", url);
       connect({
         event: ["metadata", "status"] as const,
         keepalive: true,
@@ -329,7 +328,6 @@ const usePlayerSse = () => {
 
     return () => {
       if (player?.id) {
-        // console.log("unmout player sse 2", url);
         close(url, listener);
       }
     };
@@ -347,4 +345,6 @@ export {
   PlayersContext,
   type Player,
   type Id,
+  type Metadata,
+  type Status,
 };

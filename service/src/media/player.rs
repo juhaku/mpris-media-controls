@@ -1,8 +1,11 @@
 use std::collections::HashMap;
+use std::fmt::Display;
+use std::ops::{Deref, DerefMut};
 
 use async_trait::async_trait;
 use futures::TryFutureExt;
 use serde::{Deserialize, Serialize};
+use zbus::names::BusName;
 use zbus::proxy::{Builder, CacheProperties};
 use zbus::zvariant::{OwnedObjectPath, Value};
 use zbus::{Connection, Result, proxy};
@@ -11,7 +14,7 @@ use zbus::{Connection, Result, proxy};
     interface = "org.mpris.MediaPlayer2.Player",
     default_path = "/org/mpris/MediaPlayer2"
 )]
-pub trait ProxyPlayer {
+pub trait MprisPlayer {
     fn play_pause(&self) -> Result<()>;
     fn seek(&self, offfset: i64) -> Result<()>;
     fn set_position(&self, track_id: OwnedObjectPath, offset: i64) -> Result<()>;
@@ -31,22 +34,34 @@ pub trait ProxyPlayer {
 #[async_trait]
 pub trait ProxyExt {
     async fn get_length(&self) -> std::result::Result<i64, zbus::Error>;
-    async fn new_without_cache<I: Into<String> + std::marker::Send>(
+
+    async fn try_create<'a>(
         connection: &Connection,
-        destination: I,
-    ) -> zbus::Result<ProxyPlayerProxy<'static>> {
+        destination: impl TryInto<BusName<'a>> + Display + Send,
+    ) -> std::result::Result<MprisPlayerProxy<'_>, anyhow::Error> {
+        MprisPlayerProxy::new(connection, destination.to_string())
+            .await
+            .map_err(|error| anyhow::anyhow!("Failed to create DBus Player2 connection MPRIS protocol for player: {destination}: {error}"))
+    }
+
+    async fn without_cache<'a>(
+        connection: &'a Connection,
+        destination: impl TryInto<BusName<'a>> + Display + Send + Sync,
+    ) -> std::result::Result<WithoutCaching<MprisPlayerProxy<'static>>, anyhow::Error> {
         async {
-            ProxyPlayerProxy::builder(connection)
+            MprisPlayerProxy::builder(connection)
                 .cache_properties(CacheProperties::No)
-                .destination(destination.into())
+                .destination(destination.to_string())
         }
         .and_then(Builder::build)
         .await
+        .map(WithoutCaching)
+        .map_err(|error| anyhow::anyhow!("Failed to create DBus Player2 connection MPRIS protocol for player: {destination}: {error}"))
     }
 }
 
 #[async_trait]
-impl ProxyExt for ProxyPlayerProxy<'static> {
+impl ProxyExt for MprisPlayerProxy<'static> {
     async fn get_length(&self) -> std::result::Result<i64, zbus::Error> {
         self.metadata()
             .and_then(|meta| async {
@@ -54,6 +69,34 @@ impl ProxyExt for ProxyPlayerProxy<'static> {
                 Ok(metadata.length)
             })
             .await
+    }
+}
+
+pub struct WithoutCaching<P: ProxyExt>(P);
+
+impl<P: ProxyExt> AsMut<P> for WithoutCaching<P> {
+    fn as_mut(&mut self) -> &mut P {
+        &mut self.0
+    }
+}
+
+impl<P: ProxyExt> AsRef<P> for WithoutCaching<P> {
+    fn as_ref(&self) -> &P {
+        &self.0
+    }
+}
+
+impl<P: ProxyExt> DerefMut for WithoutCaching<P> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_mut()
+    }
+}
+
+impl<P: ProxyExt> Deref for WithoutCaching<P> {
+    type Target = P;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
     }
 }
 

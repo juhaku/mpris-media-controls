@@ -5,8 +5,7 @@ import {
   useReducer,
   type Context,
 } from "react";
-import type { Id, Player } from "./hooks";
-import type { Metadata, Status } from "./media";
+import type { Id, Metadata, Player, Status } from "./hooks";
 
 interface Players {
   players: { id: Id; player: Player }[];
@@ -85,7 +84,7 @@ function reducer(state: PlayersState, action: Actions): PlayersState {
       };
     }
     case "SET_PLAYER": {
-      const newState = {
+      return {
         ...state,
         players: {
           ...state.players,
@@ -94,13 +93,12 @@ function reducer(state: PlayersState, action: Actions): PlayersState {
             meta: action.metadata,
             status: null,
             isPlaying() {
-              // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+               
               return this.status === "Playing";
             },
           },
         },
       };
-      return newState;
     }
     case "SET_CURRENT": {
       return {

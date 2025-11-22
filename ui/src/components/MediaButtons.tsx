@@ -9,11 +9,6 @@ import {
 import { useCurrentPlayer } from "../hooks";
 import { Pause, Play, StepBack, StepForward } from "lucide-react";
 
-interface MediaButtonProps {
-  subscribeStream: () => void;
-  cancelStream: () => void;
-}
-
 function seekOptions(
   currentPlayer: string,
   offset: number,
@@ -36,10 +31,7 @@ function seekOptions(
   });
 }
 
-export default function MediaButtons({
-  subscribeStream,
-  cancelStream,
-}: MediaButtonProps): ReactElement<MediaButtonProps> {
+export default function MediaButtons(): ReactElement {
   const client = useQueryClient();
 
   const { player } = useCurrentPlayer();
@@ -63,9 +55,6 @@ export default function MediaButtons({
 
   return (
     <div className="mx-4 grid grid-cols-3 items-center gap-3 py-4">
-      {/* <div className="grid grid-cols-3 items-center gap-3 bg-white/50 mx-4 rounded-xl py-4"> */}
-      {/* <div className="shadow-glass-box absolute h-31 w-[calc(100%-var(--spacing)*4*2)] rounded-2xl border border-white/30 bg-white/20 backdrop-blur-md backdrop-saturate-180"></div> */}
-      {/* <div className="grid grid-cols-3 items-center gap-3 border-white *:border"> */}
       <div className="z-1 flex justify-end">
         <Btn
           size="size-22"
@@ -83,11 +72,6 @@ export default function MediaButtons({
           disabled={!hasPlayer}
           onPress={() => {
             togglePlay.mutate();
-            if (isPlaying) {
-              cancelStream();
-            } else {
-              subscribeStream();
-            }
           }}
         >
           {isPlaying ? (
@@ -124,7 +108,6 @@ function Btn({
   onPress,
   disabled,
 }: PropsWithChildren<BtnProps>): ReactElement<BtnProps> {
-  // shadow-glass-box absolute h-31 w-[calc(100%-var(--spacing)*4*2)] rounded-2xl border border-white/30 bg-white/20 backdrop-blur-md backdrop-saturate-180
   return (
     <Button
       onPress={onPress}

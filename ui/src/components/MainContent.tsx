@@ -71,16 +71,10 @@ export default function MainContent() {
   };
 
   return (
-    <Main
-    // player={player !== null ? player.player : null}
-    // className={`bg-dark from-dark via-darkrose/70 to-dark h-dvh w-dvw bg-linear-to-bl from-40% via-70% to-95% bg-cover bg-center bg-no-repeat`}
-    // style={{ ...(url !== null ? { backgroundImage: `url(${url})` } : {}) }}
-    >
+    <Main>
       <h1 className="text-light text-center text-2xl">Media Controls</h1>
-      {/* <div className="flex h-[calc(100vh-var(--text-2xl)-100px-var(--spacing))] flex-col justify-end pb-24 text-white"> */}
       <div className="flex h-[calc(100vh-var(--text-2xl)-var(--spacing)*2)] flex-col justify-end text-white">
         {renderPlayerInfo()}
-        {/* {player !== null ? <Controls player={player} /> : null} */}
         {<Controls />}
         <div className="mx-6 mt-16 flex pb-10">
           <Volume />
@@ -110,7 +104,6 @@ export default function MainContent() {
                       className="m-1 rounded-md border border-white/30 px-3 py-3"
                       textValue={p.name}
                       onPress={(_) => {
-                        console.log("select player", p, id);
                         update(id);
                       }}
                     >
@@ -137,7 +130,6 @@ export default function MainContent() {
 }
 
 function Main({
-  // player,
   children,
 }: PropsWithChildren &
   React.HtmlHTMLAttributes<HTMLElement>): React.ReactElement {
@@ -177,17 +169,11 @@ function Main({
 
 function Controls(): ReactElement {
   const position = useCurrentPlayerPos();
-
   const { player } = useCurrentPlayer();
 
   return (
     <div>
-      <MediaButtons
-        cancelStream={() => {
-          console.log("cancel not implemented");
-        }}
-        subscribeStream={() => ({})}
-      />
+      <MediaButtons />
       <div className="mx-6">
         <MediaTrack
           length={player?.player.meta.length ?? 0}

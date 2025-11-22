@@ -9,7 +9,7 @@ use async_stream::stream;
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::response::sse::Event;
-use axum::response::{IntoResponse, Response, Sse};
+use axum::response::{Response, Sse};
 use axum::{Json, Router, routing};
 use futures::{Stream, StreamExt, TryFutureExt, future};
 use hyper::StatusCode;
@@ -17,13 +17,12 @@ use tokio::fs;
 use tokio::sync::oneshot;
 use tokio::time::{self, timeout};
 use tokio_stream::wrappers::ReceiverStream;
-use tower_http::cors::{AllowOrigin, CorsLayer};
 use zbus::Connection;
 use zvariant::OwnedObjectPath;
 
 use crate::ApiError;
 use crate::media::SseEvent;
-use crate::media::player::{ProxyExt, ProxyPlayerProxy};
+use crate::media::player::{MprisPlayerProxy, ProxyExt};
 
 use super::player::Metadata;
 
@@ -45,7 +44,6 @@ pub fn media_api(connection: Arc<Connection>) -> Router {
         // .route("/next/{player}", routing::post(next))
         // .route("/previous/{player}", routing::post(previous))
         .with_state(connection)
-        .layer(CorsLayer::new().allow_origin(AllowOrigin::any()))
 }
 
 async fn get_players(
@@ -84,6 +82,7 @@ async fn get_players(
     Ok(Json(player_identities))
 }
 
+// for a reference, UI cannot handle streams as of now
 async fn get_players_stream(
     State(connection): State<Arc<Connection>>,
 ) -> Result<Response, ApiError> {
@@ -138,21 +137,13 @@ async fn get_metadata(
     tracing::info!("Get player metadata: {}", &player);
     let con = connection.as_ref();
 
-    let proxy = ProxyPlayerProxy::new(con, player.clone())
+    let proxy = MprisPlayerProxy::try_create(con, &*player)
         .await
-        .with_context(|| {
-            format!(
-                "Failed to create DBus Player2 connection MPRIS protocol for player: {}",
-                player
-            )
-        })
-        .map_err(ApiError::Metadata)?;
+        .map_err(ApiError::ConstructPlayer)?;
 
-    let meta = proxy
-        .metadata()
-        .await
-        .context("Failed to get Player metadata")
-        .map_err(ApiError::Metadata)?;
+    let meta = proxy.metadata().await.map_err(|error| {
+        ApiError::Metadata(anyhow::anyhow!("Failed to get player metadata: {error}"))
+    })?;
 
     tracing::debug!(metadata = ?&meta, "Before from conversion");
 
@@ -170,18 +161,13 @@ async fn play_pause(
     tracing::info!("PlayPause: {}", &player);
     let con = connection.as_ref();
 
-    let proxy = ProxyPlayerProxy::new(con, player.clone())
+    let proxy = MprisPlayerProxy::try_create(con, &*player)
         .await
-        .with_context(|| {
-            format!("Failed to create DBus Player2 connection MPRIS protocol for player: {player}")
-        })
-        .map_err(ApiError::PlayPause)?;
+        .map_err(ApiError::ConstructPlayer)?;
 
-    proxy
-        .play_pause()
-        .await
-        .with_context(|| format!("Failed to PlayPause player: {player}"))
-        .map_err(ApiError::PlayPause)?;
+    proxy.play_pause().await.map_err(|error| {
+        ApiError::PlayPause(anyhow::anyhow!("PlayPause player: {player}: {error}"))
+    })?;
 
     Ok(())
 }
@@ -202,75 +188,64 @@ async fn seek(
                 .context("Failed to convert offset into i64")
         })
         .transpose()
-        .map_err(|_| ApiError::InvalidOffset)?;
+        .map_err(|_| ApiError::InvalidOffset)?
+        .ok_or(ApiError::MissingOffset)?;
 
-    if let Some(offset) = offset {
-        tracing::info!("Seek: {player} with {offset}");
-        let con = connection.as_ref();
+    tracing::info!("Seek: {player} with {offset}");
+    let con = connection.as_ref();
+    let proxy = MprisPlayerProxy::without_cache(con, &*player)
+        .await
+        .map_err(ApiError::ConstructPlayer)?;
 
-        let proxy = ProxyPlayerProxy::new_without_cache(con, player.clone())
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to create DBus Player2 connection MPRIS protocol for player: {player}"
-                )
-            })
-            .map_err(ApiError::Seek)?;
-
-        async fn seek_offset(
-            proxy: &ProxyPlayerProxy<'_>,
-            player: &str,
-            offset_micros: i64,
-        ) -> Result<(), ApiError> {
-            proxy
-                .seek(offset_micros)
-                .await
-                .with_context(|| {
-                    format!("Failed to Seek player: {player} to {offset_micros} offest micros")
-                })
-                .map_err(ApiError::Seek)
-        }
-
-        let position = proxy.position().await.map_err(|error| {
+    async fn seek_offset(
+        proxy: &MprisPlayerProxy<'_>,
+        player: &str,
+        offset_micros: i64,
+    ) -> Result<(), ApiError> {
+        proxy.seek(offset_micros).await.map_err(|error| {
             ApiError::Seek(anyhow::anyhow!(
-                "Fafiled to get player: {player} Metadata for position: {error}"
+                "Failed to Seek player: {player} to {offset_micros} offest micros: {error}"
             ))
-        })?;
-
-        let offset_micros = offset * 1000 * 1000;
-
-        tracing::debug!("Try seek as microseconds: {offset_micros}");
-        seek_offset(&proxy, &player, offset_micros).await?;
-
-        let (_tx, rx) = oneshot::channel::<i64>();
-        let _ = timeout(Duration::from_millis(100), rx).await;
-
-        let after_seek_position = proxy.position().await.map_err(|error| {
-            ApiError::Seek(anyhow::anyhow!(
-                "Fafiled to get player: {player} Metadata for position after seek: {error}"
-            ))
-        })?;
-        let diff_secs = Duration::from_micros(position as u64)
-            .abs_diff(Duration::from_micros(after_seek_position as u64))
-            .as_secs();
-
-        tracing::debug!(
-            "After seeking, original: {position} after: {after_seek_position} diff in seconds: {diff_secs}",
-        );
-
-        // check the seek length is actually 5 seconds otherwise try with milliseconds
-        if diff_secs < 4 {
-            tracing::debug!("Incorrent offset as microseconds, trying with milliseconds");
-            // revert the offset
-            seek_offset(&proxy, &player, -offset_micros).await?;
-            // try seeking with millis instead
-            seek_offset(&proxy, &player, offset * 1000).await?;
-        }
-
-        Ok(())
-    } else {
-        Err(ApiError::MissingOffset)
+        })
     }
+
+    let position = proxy.position().await.map_err(|error| {
+        ApiError::Seek(anyhow::anyhow!(
+            "Fafiled to get player: {player} Metadata for position: {error}"
+        ))
+    })?;
+
+    let offset_micros = offset * 1000 * 1000;
+
+    tracing::debug!("Try seek as microseconds: {offset_micros}");
+    seek_offset(&proxy, &player, offset_micros).await?;
+
+    let (_tx, rx) = oneshot::channel::<i64>();
+    let _ = timeout(Duration::from_millis(100), rx).await;
+
+    let after_seek_position = proxy.position().await.map_err(|error| {
+        ApiError::Seek(anyhow::anyhow!(
+            "Failed to get player: {player} Metadata for position after seek: {error}"
+        ))
+    })?;
+    let length_seeked_secs = Duration::from_micros(position as u64)
+        .abs_diff(Duration::from_micros(after_seek_position as u64))
+        .as_secs();
+
+    tracing::debug!(
+        "After seeking, original: {position} after: {after_seek_position} diff in seconds: {length_seeked_secs}",
+    );
+
+    // check the seek length is actually 5 seconds otherwise try with milliseconds
+    if length_seeked_secs < 4 {
+        tracing::debug!("Incorrent offset as microseconds, trying with milliseconds");
+        // revert the offset
+        seek_offset(&proxy, &player, -offset_micros).await?;
+        // try seeking with millis instead
+        seek_offset(&proxy, &player, offset * 1000).await?;
+    }
+
+    Ok(())
 }
 
 async fn get_position(
@@ -280,18 +255,15 @@ async fn get_position(
     tracing::info!("Get current player: {player} position");
     let con = connection.as_ref();
 
-    let proxy = ProxyPlayerProxy::new(con, player.clone())
+    let proxy = MprisPlayerProxy::try_create(con, player.clone())
         .await
-        .with_context(|| {
-            format!("Failed to create DBus Player2 connection MPRIS protocol for player: {player}")
-        })
-        .map_err(ApiError::Seek)?;
+        .map_err(ApiError::ConstructPlayer)?;
 
-    let pos = proxy
-        .position()
-        .await
-        .with_context(|| format!("Failed to get player: {player} Position"))
-        .map_err(ApiError::Position)?;
+    let pos = proxy.position().await.map_err(|error| {
+        ApiError::Position(anyhow::anyhow!(
+            "Failed to get player: {player} Position: {error}"
+        ))
+    })?;
 
     Ok(pos.to_string())
 }
@@ -302,11 +274,11 @@ async fn get_positon_sse(
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     tracing::info!("Get positon SSE for player: {player}");
     let con = connection.as_ref();
-    let proxy = match ProxyPlayerProxy::new_without_cache(con, player.clone()).await {
+    let proxy = match MprisPlayerProxy::without_cache(con, &*player).await {
         Ok(proxy) => proxy,
         Err(error) => {
             return Sse::new(SseEvent::Single(Some(
-                Event::default().event("errro").data(error.to_string()),
+                Event::default().event("error").data(error.to_string()),
             )));
         }
     };
@@ -314,9 +286,7 @@ async fn get_positon_sse(
     let length = match proxy
         .get_length()
         .map_err(|error| {
-            ApiError::Position(anyhow::anyhow!(
-                "Fafiled to get player: {player} Metadata for position: {error}"
-            ))
+            anyhow::anyhow!("Failed to get player: {player} Metadata for position: {error}")
         })
         .await
     {
@@ -336,16 +306,13 @@ async fn get_positon_sse(
             let _ = interval.tick().await;
 
             tracing::debug!("Check the postion: {player}, length: {length}");
-            let pos = match proxy
-                .position()
-                .await
-                .with_context(|| format!("Failed to get player: {player} Position"))
-                .map_err(ApiError::Position)
-            {
+            let pos = match proxy.position().await {
                 Ok(position) => position,
                 Err(error) => {
                     let _ = tx
-                        .send(Event::default().event("error").data(error.to_string()))
+                        .send(Event::default().event("error").data(
+                            anyhow::anyhow!("Failed to get player position: {error}").to_string(),
+                        ))
                         .await;
                     return;
                 }
@@ -381,43 +348,35 @@ async fn set_position(
     Path(player): Path<String>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<(), ApiError> {
-    let track_id = if let Some(track_id) = params.get("track_id") {
-        track_id
-    } else {
-        return Err(ApiError::MissingTrackId);
-    };
+    let track_id = params.get("track_id").ok_or(ApiError::MissingTrackId)?;
+    let position = params.get("position").ok_or(ApiError::MissingPosition)?;
 
-    let position = if let Some(position) = params.get("position") {
-        position
-            .parse::<i64>()
-            .context("Failed to parse position")
-            .map_err(|_| ApiError::InvalidPosition)?
-    } else {
-        return Err(ApiError::MissingTrackId);
-    };
+    let position = position
+        .parse::<i64>()
+        .context("Failed to parse position as i64")
+        .map_err(|_| ApiError::InvalidPosition)?;
 
     tracing::info!("SetPosition: {player} position: {position}, track_id: {track_id}");
     let con = connection.as_ref();
 
-    let proxy = ProxyPlayerProxy::new(con, player.clone())
+    let proxy = MprisPlayerProxy::try_create(con, &*player)
         .await
-        .with_context(|| {
-            format!("Failed to create DBus Player2 connection MPRIS protocol for player: {player}")
-        })
-        .map_err(ApiError::Seek)?;
+        .map_err(ApiError::ConstructPlayer)?;
 
-    let track_id = OwnedObjectPath::try_from(track_id.as_str())
-        .context("Failed to create ObjectPath from track_id")
-        .map_err(ApiError::SetPosition)?;
+    let track_id = OwnedObjectPath::try_from(track_id.as_str()).map_err(|error| {
+        ApiError::SetPosition(anyhow::anyhow!(
+            "Failed to create ObjectPath from track_id '{track_id}': {error}"
+        ))
+    })?;
 
     proxy
         .set_position(track_id, position)
         .await
-        .inspect_err(|e| {
-            eprintln!("got error: {e:#?}");
-        })
-        .context("Failed to set Player position")
-        .map_err(ApiError::SetPosition)?;
+        .map_err(|error| {
+            ApiError::SetPosition(anyhow::anyhow!(
+                "Failed to set player: {player} position: {error}"
+            ))
+        })?;
 
     Ok(())
 }
@@ -429,18 +388,15 @@ async fn get_playback_status(
     tracing::info!("Get current playback status for player: {player}");
     let con = connection.as_ref();
 
-    let proxy = ProxyPlayerProxy::new(con, player.clone())
+    let proxy = MprisPlayerProxy::try_create(con, &*player)
         .await
-        .with_context(|| {
-            format!("Failed to create DBus Player2 connection MPRIS protocol for player: {player}")
-        })
-        .map_err(ApiError::PlaybackStatus)?;
+        .map_err(ApiError::ConstructPlayer)?;
 
-    let status = proxy
-        .playback_status()
-        .await
-        .with_context(|| format!("Failed to get player: {player} PlaybackStatus"))
-        .map_err(ApiError::PlaybackStatus)?;
+    let status = proxy.playback_status().await.map_err(|error| {
+        ApiError::PlaybackStatus(anyhow::anyhow!(
+            "Failed to get player: {player} PlaybackStatus: {error}"
+        ))
+    })?;
 
     Ok(status.to_string())
 }
@@ -467,17 +423,17 @@ async fn get_player_sse(
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     tracing::info!("Get SSE for player: {player}");
     let con = connection.as_ref();
-    let proxy = match ProxyPlayerProxy::new_without_cache(con, player.clone()).await {
+    let proxy = match MprisPlayerProxy::without_cache(con, &*player).await {
         Ok(proxy) => proxy,
         Err(error) => {
             return Sse::new(SseEvent::Single(Some(
-                Event::default().event("errro").data(error.to_string()),
+                Event::default().event("error").data(error.to_string()),
             )));
         }
     };
 
     async fn get_metadata(
-        proxy: &ProxyPlayerProxy<'_>,
+        proxy: &MprisPlayerProxy<'_>,
         player: &str,
     ) -> Result<Metadata, ApiError> {
         proxy
@@ -515,8 +471,6 @@ async fn get_player_sse(
 
     tokio::spawn(async move {
         loop {
-            let _ = interval.tick().await;
-
             tokio::select! {
                 _ = keepalive_interval.tick() => {
                     tracing::debug!("Checking keepalive");
@@ -590,7 +544,6 @@ async fn get_player_sse(
 
                             status = new_status;
                         }
-
                 }
             }
         }
@@ -609,7 +562,7 @@ async fn get_player_sse(
 //
 //     let con = connection.as_ref();
 //
-//     let proxy = ProxyPlayerProxy::new(con, player.clone())
+//     let proxy = MprisPlayerProxy::new(con, player.clone())
 //         .await
 //         .with_context(|| {
 //             format!("Failed to create DBus Player2 connection MPRIS protocol for player: {player}")
@@ -630,7 +583,7 @@ async fn get_player_sse(
 //
 //     let con = connection.as_ref();
 //
-//     let proxy = ProxyPlayerProxy::new(con, player.clone())
+//     let proxy = MprisPlayerProxy::new(con, player.clone())
 //         .await
 //         .with_context(|| {
 //             format!("Failed to create DBus Player2 connection MPRIS protocol for player: {player}")

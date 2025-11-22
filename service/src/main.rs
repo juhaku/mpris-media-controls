@@ -34,8 +34,6 @@ use zbus::conn::Builder;
 enum ApiError {
     #[error("{0}")]
     ListConnections(anyhow::Error),
-    #[error("failed to get identity: {0}")]
-    GetIdentity(zbus::Error),
     #[error("{0}")]
     Players(anyhow::Error),
     #[error("{0}")]
@@ -56,6 +54,8 @@ enum ApiError {
     MissingTrackId,
     #[error("invalid position")]
     InvalidPosition,
+    #[error("missing position")]
+    MissingPosition,
     #[error("{0}")]
     PlaybackStatus(anyhow::Error),
     #[error("failed to read image: {0}")]
@@ -64,6 +64,8 @@ enum ApiError {
     LoadImage(#[from] reqwest::Error),
     #[error("{0}")]
     Volume(anyhow::Error),
+    #[error("{0}")]
+    ConstructPlayer(anyhow::Error),
     // #[error("{0}")]
     // Next(anyhow::Error),
     // #[error("{0}")]
@@ -73,54 +75,20 @@ enum ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         match self {
-            ApiError::ListConnections(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            }
-            ApiError::GetIdentity(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            }
-            ApiError::Players(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            }
-            ApiError::Metadata(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            }
-            ApiError::PlayPause(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            }
-            ApiError::MissingOffset => (StatusCode::BAD_REQUEST, self.to_string()).into_response(),
-            ApiError::InvalidOffset => (StatusCode::BAD_REQUEST, self.to_string()).into_response(),
-            ApiError::Seek(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            }
-            ApiError::Position(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            }
-            ApiError::SetPosition(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            }
-            ApiError::MissingTrackId => (StatusCode::BAD_REQUEST, self.to_string()).into_response(),
-            ApiError::InvalidPosition => {
+            ApiError::MissingTrackId
+            | ApiError::InvalidPosition
+            | ApiError::MissingPosition
+            | ApiError::MissingOffset
+            | ApiError::InvalidOffset => {
                 (StatusCode::BAD_REQUEST, self.to_string()).into_response()
             }
-            ApiError::PlaybackStatus(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            }
-            ApiError::ReadImage(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            }
-            ApiError::LoadImage(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            }
-            ApiError::Volume(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-            } // ApiError::Next(_) => {
-              //     (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
-              // }
-              // ApiError::Previous(_) => {
-              //     (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response(),
+            // ApiError::Next(_) => {
+            //     (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
+            // }
+            // ApiError::Previous(_) => {
+            //     (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).into_response()
         }
-        // }
     }
 }
 
@@ -151,9 +119,6 @@ async fn main() -> Result<(), anyhow::Error> {
     {
         router = router.fallback(ui::serve_ui);
     }
-    // .fallback_service(
-    //     ServeDir::new("assets").not_found_service(ServeFile::new("assets/index.html")),
-    // );
     let port: u16 = match std::env::var("PORT") {
         Ok(port) => port
             .parse::<u16>()
@@ -243,7 +208,6 @@ fn rustls_server_config(
 
     let config = ServerConfig::builder()
         .with_no_client_auth()
-        // .with_cert_resolver(cert_resolver)
         .with_single_cert(certs, key)
         .map_err(|error| {
             anyhow::anyhow!("Failed to create server config from single cert / key pair: {error:?}")

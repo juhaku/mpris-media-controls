@@ -33,7 +33,6 @@ export default function MediaTrack({
   const r = useRef<number>(null);
   useEffect(() => {
     if (!drag && !loading) {
-      // console.log("setting pos", position, "value", value);
       if (lastDragPositon.current) {
         setValue(lastDragPositon.current);
         lastDragPositon.current = null;
@@ -45,9 +44,7 @@ export default function MediaTrack({
       r.current ??= setTimeout(() => {
         setLoading(false);
         setDrag(false);
-        // setValue(value);
         r.current = null;
-        // console.log("setting pos delayed", position, value);
       }, 400);
     }
   }, [drag, loading, position, value]);
@@ -118,7 +115,6 @@ export default function MediaTrack({
           }}
         ></span>
         <SliderThumb
-          // translate-y-[11%]
           className="z-2 h-10 w-20 translate-y-[9%] rounded-[40px]"
           ref={setThumbRef}
         ></SliderThumb>
@@ -193,9 +189,7 @@ function toFormattedTime(
   if (maxLength.hours > 0) {
     s = s + `${time.hours.toString()}:`;
   }
-  // if (maxLength.hours > 0 || maxLength.minutes > 0) {
   s = s + `${numberFormat.format(time.minutes)}:`;
-  // }
   s = s + numberFormat.format(time.seconds);
 
   return s;

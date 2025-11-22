@@ -64,11 +64,9 @@ export default function Volume() {
       <Button
         onPress={(_) => {
           if (volume !== 0) {
-            // setVolume(0);
             updateVolume(0);
           } else {
             updateVolume(previousVolume.current);
-            // setVolume(previousVolume.current);
           }
         }}
       >
@@ -78,7 +76,6 @@ export default function Volume() {
         volume={volume}
         onChange={(volume) => {
           updateVolume(volume);
-          // setVolume(volume);
           previousVolume.current = volume;
         }}
       />
@@ -120,9 +117,6 @@ function VolumeSlider({
         }
       }}
     >
-      {/* <Label>slider</Label> */}
-      {/* translate3d(-56px,-10px,0) */}
-      {/* <SliderOutput /> */}
       <SliderTrack className="col-span-2 before:rounded-[10px] [&:before]:absolute [&:before]:block [&:before]:h-[7px] [&:before]:w-[calc(100vw-var(--spacing)*16-24px-var(--spacing)*3-16px*2-24px-24px-28px)] [&:before]:bg-slate-50/10 [&:before]:content-['']">
         <span
           className={`bg-light/70 absolute block h-[7px] rounded-[10px] shadow-slate-50`}
@@ -135,12 +129,6 @@ function VolumeSlider({
           className="mt-[3px] h-9 w-9 rounded-[40px] bg-slate-50/0"
         ></SliderThumb>
       </SliderTrack>
-      {/* <SliderOutput className="text-light text-shadow-glassbox"> */}
-      {/*   {(state) => { */}
-      {/*     const value = state.state.values[0]; */}
-      {/*     return value; */}
-      {/*   }} */}
-      {/* </SliderOutput> */}
     </Slider>
   );
 }
