@@ -37,7 +37,7 @@ just preview
 Build production app and install it as user systemd service.
 
 ```bash
-just build produciton
+just build production
 just install
 ```
 
