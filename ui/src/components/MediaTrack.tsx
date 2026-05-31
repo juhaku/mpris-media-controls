@@ -8,6 +8,7 @@ import {
 } from "react-aria-components";
 import { useCurrentPlayer } from "../hooks";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { Query } from "../queryClient";
 
 interface SliderPropsInner {
   length: number;
@@ -55,12 +56,11 @@ export default function MediaTrack({
     }
   }, [thumbRef, value]);
 
-  const setPosition = useMutation({
+  const setPosition = useMutation<unknown, Error, Query>({
     mutationKey: [
       "/media",
       "/position",
       `/${encodeURIComponent(player?.id ?? "")}`,
-      `?${new URLSearchParams({ track_id: player?.player.meta.track_id ?? "", position: value.toString() }).toString()}`,
     ],
     onSuccess: () => {
       setTimeout(async () => {
@@ -95,7 +95,12 @@ export default function MediaTrack({
         }
       }}
       onChangeEnd={(value) => {
-        setPosition.mutate();
+        setPosition.mutate({
+          value: {
+            track_id: player?.player.meta.track_id ?? "",
+            position: value.toString(),
+          },
+        });
         setLoading(true);
 
         if (Array.isArray(value)) {

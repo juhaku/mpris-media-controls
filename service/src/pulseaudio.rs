@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use async_trait::async_trait;
-use axum::{Form, debug_handler};
+use axum::Form;
 use futures::TryFutureExt;
 use serde::Deserialize;
 use tokio::process::Command;
@@ -110,7 +110,6 @@ impl PulseAudio for PaCtl {
     }
 }
 
-#[debug_handler]
 pub async fn get_volume() -> Result<String, ApiError> {
     tracing::info!("Get sytem volume for default sink");
 

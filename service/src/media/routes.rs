@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::error::Error;
+use std::fmt::Display;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,15 +16,16 @@ use axum::{Json, Router, routing};
 use futures::{Stream, StreamExt, TryFutureExt, future};
 use hyper::StatusCode;
 use tokio::fs;
+use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tokio::time::{self, timeout};
 use tokio_stream::wrappers::ReceiverStream;
 use zbus::Connection;
 use zvariant::OwnedObjectPath;
 
-use crate::ApiError;
 use crate::media::SseEvent;
 use crate::media::player::{MprisPlayerProxy, ProxyExt};
+use crate::{ApiError, pulseaudio};
 
 use super::player::Metadata;
 
@@ -318,14 +321,28 @@ async fn get_positon_sse(
                 }
             };
 
-            if pos == length {
-                tracing::debug!("last frame, {pos} == {length}, send EOS");
+            if pos >= length {
+                tracing::debug!("last frame, {pos} >= {length}, send EOS");
                 let _ = tx
                     .send(Event::default().event("position").data("EOS"))
                     .await;
                 break;
             } else {
                 tracing::debug!("Still streaming for postion: {pos}");
+
+                let status = match proxy.playback_status().await {
+                    Ok(status) => status,
+                    Err(error) => {
+                        tracing::warn!("Failed to get player playback status: error: {error:#?}");
+                        String::new()
+                    }
+                };
+                if status != "Playing" {
+                    tracing::error!(
+                        "Player is not playing, closing stream, stream may have stalled or closed abruptly"
+                    );
+                    break;
+                }
                 if tx
                     .send(Event::default().event("position").data(format!("{pos}")))
                     .await
@@ -417,6 +434,23 @@ async fn get_image(Path(url): Path<String>) -> Result<Vec<u8>, ApiError> {
     Ok(bytes)
 }
 
+enum PlayerSseEvent {
+    Metadata,
+    Status,
+    Volume,
+}
+
+impl Display for PlayerSseEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::Metadata => "metadata",
+            Self::Status => "status",
+            Self::Volume => "volume",
+        };
+        write!(f, "{name}")
+    }
+}
+
 async fn get_player_sse(
     State(connection): State<Arc<Connection>>,
     Path(player): Path<String>,
@@ -465,6 +499,39 @@ async fn get_player_sse(
         }
     };
 
+    let mut volume = match pulseaudio::get_volume().await {
+        Ok(volume) => volume,
+        Err(error) => {
+            tracing::warn!(
+                "Failed to get initial volume in player sse, using empty string: error: {error:#?}"
+            );
+            String::new()
+        }
+    };
+
+    async fn send_error(tx: &Sender<Event>, error: impl Error) {
+        let _ = tx
+            .send(Event::default().event("error").data(error.to_string()))
+            .await;
+    }
+
+    async fn send_event<S: AsRef<str>>(
+        tx: &Sender<Event>,
+        event_type: PlayerSseEvent,
+        data: S,
+    ) -> bool {
+        if tx
+            .send(Event::default().event(event_type.to_string()).data(data))
+            .await
+            .is_err()
+        {
+            tracing::debug!("Broke pipe, failed to send {event_type}");
+            return false;
+        }
+
+        true
+    }
+
     let mut interval = time::interval(Duration::from_millis(500));
     let mut keepalive_interval = time::interval(Duration::from_secs(20));
     let (tx, rx) = tokio::sync::mpsc::channel(30);
@@ -485,65 +552,52 @@ async fn get_player_sse(
                     let new_metadata = match get_metadata(&proxy, &player).await {
                         Ok(position) => position,
                         Err(error) => {
-                            let _ = tx
-                                .send(Event::default().event("error").data(error.to_string()))
-                                .await;
+                            send_error(&tx, error).await;
                             return;
                         }
                     };
 
-
                     if metadata != new_metadata {
-                        //  send event metadata changed
                         tracing::debug!("Player: {player} metadata changed: {new_metadata:?}");
 
-                        if tx
-                            .send(
-                                Event::default().event("metadata").data(
-                                    serde_json::to_string_pretty(&new_metadata)
-                                        .expect("new metadata should serialize to JSON"),
-                                ),
-                            )
-                            .await
-                            .is_err()
-                        {
-                            tracing::debug!("Broke pipe, failed to send metadata");
-
+                        if !send_event(&tx, PlayerSseEvent::Metadata,
+                                serde_json::to_string_pretty(&new_metadata).expect("new metadata should serialize to JSON")
+                            ).await {
                             break;
                         }
-
-                        // update the old reference metadata
                         metadata = new_metadata;
                     }
 
-
-                        let new_status = match proxy.playback_status().await {
-                            Ok(status) => status,
-                            Err(error) => {
-                            let _ = tx
-                                .send(Event::default().event("error").data(error.to_string()))
-                                .await;
+                    let new_status = match proxy.playback_status().await {
+                        Ok(status) => status,
+                        Err(error) => {
+                            send_error(&tx, error).await;
                             return;
-                            }
-                        };
-
-                        if status != new_status {
-                            if tx
-                                .send(
-                                    Event::default().event("status").data(
-                                        &new_status
-                                    ),
-                                )
-                                .await
-                                .is_err()
-                            {
-                                tracing::debug!("Broke pipe, failed to send metadata");
-
-                                break;
-                            }
-
-                            status = new_status;
                         }
+                    };
+
+                    if status != new_status {
+                        if !send_event(&tx, PlayerSseEvent::Status, &new_status).await {
+                            break;
+                        }
+                        status = new_status;
+                    }
+
+                    let new_volume = match pulseaudio::get_volume().await {
+                        Ok(volume) => volume,
+                        Err(error) => {
+                            tracing::warn!("Failed to get volume in player sse, using empty string, volume wont be sent as event to the client: error: {error:#?}");
+                            String::new()
+                        }
+                    };
+                    if new_volume != volume {
+                        volume = new_volume;
+
+                        if !send_event(&tx, PlayerSseEvent::Volume, &volume).await {
+                            tracing::debug!("Broke pipe, failed to send volume");
+                            break;
+                        }
+                    }
                 }
             }
         }

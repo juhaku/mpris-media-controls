@@ -16,8 +16,9 @@ class ResponseError extends Error {
 
 type Method = "GET" | "POST";
 
-abstract class Body {
+abstract class Body implements Parameters {
   body: unknown;
+  value: unknown;
 
   static json(body: unknown) {
     const b = new Json();
@@ -68,6 +69,27 @@ class Form extends Body {
       ),
     ).toString();
   }
+}
+
+interface Parameters<T = unknown> {
+  value: T;
+}
+
+class Query<T = Record<string, string>> implements Parameters {
+  value: T;
+  constructor(value: T) {
+    this.value = value;
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function isQuery(value: any): value is Query {
+  return (
+    value !== null &&
+    value !== undefined &&
+    "value" in value &&
+    !("body" in value)
+  );
 }
 
 async function handleRequest<R>(
@@ -121,15 +143,17 @@ const queryClient = new QueryClient({
     },
     mutations: {
       mutationFn: (variables, context) => {
-        return handleRequest(
-          context.mutationKey ?? [],
-          variables as Body,
-          context.meta?.headers ?? {},
-          "POST",
-        );
+        let key = context.mutationKey ?? [];
+        let body: Body | undefined = variables as Body;
+        if (isQuery(variables)) {
+          const query = new URLSearchParams(variables.value).toString();
+          key = [...key, `?${query}`];
+          body = undefined;
+        }
+        return handleRequest(key, body, context.meta?.headers ?? {}, "POST");
       },
     },
   },
 });
 
-export { queryClient, Body };
+export { queryClient, Body, Query };

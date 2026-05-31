@@ -283,7 +283,7 @@ const usePlayerSse = () => {
   const url = `${config.server}/media/player-sse/${player?.id ?? ""}`;
 
   const listener = useCallback(
-    async (type: "metadata" | "status", data: unknown) => {
+    async (type: "metadata" | "status" | "volume", data: unknown) => {
       switch (type) {
         case "metadata": {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -311,6 +311,13 @@ const usePlayerSse = () => {
           }
           break;
         }
+        case "volume": {
+          if (player?.id) {
+            await client.invalidateQueries({
+              queryKey: ["/volume"],
+            });
+          }
+        }
       }
     },
     [client, player?.id, updateMetadata],
@@ -319,7 +326,7 @@ const usePlayerSse = () => {
   useEffect(() => {
     if (player?.id) {
       connect({
-        event: ["metadata", "status"] as const,
+        event: ["metadata", "status", "volume"] as const,
         keepalive: true,
         url,
         listener,
